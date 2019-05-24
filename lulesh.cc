@@ -2973,7 +2973,8 @@ int main(int argc, char *argv[])
          if(!MPI_Session_check_in_processet("app://lulesh")){
             //migration 
             //while(1){ sleep(1); }
-            printf("You are done? Happy? Shutting Down...\n");
+            printf("I'm %d/%d You are done? Happy? Shutting Down...\n", mpi.rank, mpi.size);
+            //MPI_Finalize();
             MPI_Session_finalize(&mpi.session);
 	         MPI_Session_free();
          }
@@ -3040,14 +3041,14 @@ int main(int argc, char *argv[])
                }
          }*/
 
-
+/*
          printf("m_delv_xi_sum: %d, loc: %d", m_delv_xi_sum.size(), locDom->m_delv_xi.size());
          for(int i=0; i<locDom->m_dxx.size(); ++i){
                if(mpi.rank==0){
                   printf("Rank: %d The local value before %d is %f\n", mpi.rank, i, locDom->m_dxx[i]);
                }
          }
-
+*/
          printf("%d/%d: Now going to continue... My Comm: %p  \n", mpi.size, mpi.rank, mpi.current_comm);
          printf("fuckyou\n");
       }	
