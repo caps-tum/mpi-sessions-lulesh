@@ -171,34 +171,85 @@ class Domain {
           Index_t nx, Int_t tp, Int_t nr, Int_t balance, Int_t cost);
 
    // Destructor
-   ~Domain();
+   ~Domain(){};
 
-   //
+
+  
+     /**
+    * @brief this method is extracted from the constructor of Domain
+    *        The constructor only calls this and it does the initialization
+    *        The reason for this change is that after repartitioning
+    *        some parts of the constructor has to be re-executed (
+    *        of course not the zero initialization of data) to update
+    *        some parameters
+    * @param numRanks
+    * @param colLoc
+    * @param rowLoc
+    * @param planeLoc
+    * @param nx
+    * @param tp
+    * @param nr
+    * @param balance
+    * @param cost
+    */
+   void init_domain(Int_t numRanks, Index_t colLoc,
+                    Index_t rowLoc, Index_t planeLoc,
+                    Index_t nx, Int_t tp, Int_t nr, Int_t balance, Int_t cost);
+
+   /**
+    * @brief this method initializes the parameters that are
+    *        set in the controctor of Domain
+    *        similar to init_domain but it is only used for
+    *        repartitioning as it does not include all the
+    *        codes in the constructor of Domain in the ref-
+    *        erence implementation. For example it skips
+    *        initializing the fields to zero since this
+    *        initialization would remove the data and
+    *        leads to incorrect results after repartitioning.
+    * @param numRanks
+    * @param colLoc
+    * @param rowLoc
+    * @param planeLoc
+    * @param nx
+    * @param tp
+    * @param nr
+    * @param balance
+    * @param cost
+    */
+   void re_init_domain(Int_t numRanks, Index_t colLoc,
+                       Index_t rowLoc, Index_t planeLoc,
+                       Index_t nx, Int_t tp, Int_t nr, Int_t balance, Int_t cost);
+
+  //
    // ALLOCATION
    //
 
-   void AllocateNodePersistent(Int_t numNode) // Node-centered
+ void AllocateNodePersistent(Int_t numNode, Int_t numRanks) // Node-centered
    {
-      m_x.resize(numNode);  // coordinates
-      m_y.resize(numNode);
-      m_z.resize(numNode);
+       int edgeElem = (int)(cbrt(numNode)+0.1)-1;
+       int side = cbrt (numRanks);
+       int globalNumNode=(edgeElem*side+1)*(edgeElem*side+1)*(edgeElem*side+1);
 
-      m_xd.resize(numNode); // velocities
-      m_yd.resize(numNode);
-      m_zd.resize(numNode);
+       m_x.resize(globalNumNode);  // coordinates
+       m_y.resize(globalNumNode);
+       m_z.resize(globalNumNode);
 
-      m_xdd.resize(numNode); // accelerations
-      m_ydd.resize(numNode);
-      m_zdd.resize(numNode);
+       m_xd.resize(globalNumNode); // velocities
+       m_yd.resize(globalNumNode);
+       m_zd.resize(globalNumNode);
 
-      m_fx.resize(numNode);  // forces
-      m_fy.resize(numNode);
-      m_fz.resize(numNode);
+       m_xdd.resize(globalNumNode); // accelerations
+       m_ydd.resize(globalNumNode);
+       m_zdd.resize(globalNumNode);
 
-      m_nodalMass.resize(numNode);  // mass
+       m_fx.resize(globalNumNode);  // forces
+       m_fy.resize(globalNumNode);
+       m_fz.resize(globalNumNode);
+
+       m_nodalMass.resize(globalNumNode);  // mass
    }
 
-   void AllocateElemPersistent(Int_t numElem) // Elem-centered
+  void AllocateElemPersistent(Int_t numElem, Int_t numRanks) // Elem-centered
    {
       m_nodelist.resize(8*numElem);
 
@@ -212,64 +263,61 @@ class Domain {
 
       m_elemBC.resize(numElem);
 
-      m_e.resize(numElem);
-      m_p.resize(numElem);
+      m_e.resize(numRanks*numElem);
+      m_p.resize(numRanks*numElem);
 
-      m_q.resize(numElem);
-      m_ql.resize(numElem);
-      m_qq.resize(numElem);
+      m_q.resize(numRanks*numElem);
+      m_ql.resize(numRanks*numElem);
+      m_qq.resize(numRanks*numElem);
 
-      m_v.resize(numElem);
+      m_v.resize(numRanks*numElem);
 
-      m_volo.resize(numElem);
-      m_delv.resize(numElem);
-      m_vdov.resize(numElem);
+      m_volo.resize(numRanks*numElem);
+      m_delv.resize(numRanks*numElem);
+      m_vdov.resize(numRanks*numElem);
 
-      m_arealg.resize(numElem);
+      m_arealg.resize(numRanks*numElem);
 
-      m_ss.resize(numElem);
+      m_ss.resize(numRanks*numElem);
 
-      m_elemMass.resize(numElem);
-
+      m_elemMass.resize(numRanks*numElem);
       m_vnew.resize(numElem) ;
-   }
 
-   void AllocateGradients(Int_t numElem, Int_t allElem)
-   {
-      // Position gradients
-      m_delx_xi   = Allocate<Real_t>(numElem) ;
-      m_delx_eta  = Allocate<Real_t>(numElem) ;
-      m_delx_zeta = Allocate<Real_t>(numElem) ;
-
-      // Velocity gradients
-      m_delv_xi   = Allocate<Real_t>(allElem) ;
-      m_delv_eta  = Allocate<Real_t>(allElem);
-      m_delv_zeta = Allocate<Real_t>(allElem) ;
    }
 
    void DeallocateGradients()
    {
-      Release(&m_delx_zeta);
-      Release(&m_delx_eta) ;
-      Release(&m_delx_xi)  ;
+      m_delx_zeta.clear() ;
+      m_delx_eta.clear() ;
+      m_delx_xi.clear() ;
 
-      Release(&m_delv_zeta);
-      Release(&m_delv_eta) ;
-      Release(&m_delv_xi)  ;
+      m_delv_zeta.clear() ;
+      m_delv_eta.clear() ;
+      m_delv_xi.clear() ;
+   }
+
+   void AllocateGradients(Int_t numElem, Int_t numRanks, Index_t allElem)
+   {
+      m_delx_xi.resize(numRanks*numElem) ;
+      m_delx_eta.resize(numRanks*numElem) ;
+      m_delx_zeta.resize(numRanks*numElem) ;
+      // Velocity gradients
+      m_delv_xi.resize(numRanks*numElem) ;
+      m_delv_eta.resize(numRanks*numElem);
+      m_delv_zeta.resize(numRanks*numElem) ;
    }
 
    void AllocateStrains(Int_t numElem)
    {
-      m_dxx = Allocate<Real_t>(numElem) ;
-      m_dyy = Allocate<Real_t>(numElem) ;
-      m_dzz = Allocate<Real_t>(numElem) ;
+      m_dxx.resize(numRanks()*numElem) ;
+      m_dyy.resize(numRanks()*numElem) ;
+      m_dzz.resize(numRanks()*numElem) ;
    }
 
    void DeallocateStrains()
-   {
-      Release(&m_dzz) ;
-      Release(&m_dyy) ;
-      Release(&m_dxx) ;
+   {m_dzz.clear() ;
+      m_dyy.clear() ;
+      m_dxx.clear() ;
    }
    
    //
@@ -315,7 +363,7 @@ class Domain {
    Index_t&  regElemSize(Index_t idx) { return m_regElemSize[idx] ; }
    Index_t&  regNumList(Index_t idx) { return m_regNumList[idx] ; }
    Index_t*  regNumList()            { return &m_regNumList[0] ; }
-   Index_t*  regElemlist(Int_t r)    { return m_regElemlist[r] ; }
+   std::vector<Index_t>  regElemlist(Int_t r)    { return m_regElemlist[r] ; }
    Index_t&  regElemlist(Int_t r, Index_t idx) { return m_regElemlist[r][idx] ; }
 
    Index_t*  nodelist(Index_t idx)    { return &m_nodelist[Index_t(8)*idx] ; }
@@ -500,9 +548,14 @@ class Domain {
    // Region information
    Int_t    m_numReg ;
    Int_t    m_cost; //imbalance cost
-   Index_t *m_regElemSize ;   // Size of region sets
-   Index_t *m_regNumList ;    // Region number per domain element
-   Index_t **m_regElemlist ;  // region indexset 
+   //Index_t *m_regElemSize ;   // Size of region sets
+   //Index_t *m_regNumList ;    // Region number per domain element
+   //Index_t **m_regElemlist ;  // region indexset 
+
+
+   std::vector<Index_t> m_regElemSize; // Size of region sets
+   std::vector<Index_t> m_regNumList; // Region number per domain element
+   std::vector <std::vector <Index_t> > m_regElemlist; // region indexset
 
    std::vector<Index_t>  m_nodelist ;     /* elemToNode connectivity */
 
@@ -515,17 +568,18 @@ class Domain {
 
    std::vector<Int_t>    m_elemBC ;  /* symmetry/free-surface flags for each elem face */
 
-   Real_t             *m_dxx ;  /* principal strains -- temporary */
-   Real_t             *m_dyy ;
-   Real_t             *m_dzz ;
+   std::vector<double>   m_dxx ;  /* principal strains -- temporary */
+   std::vector<double>   m_dyy ;
+   std::vector<double>   m_dzz ;
 
-   Real_t             *m_delv_xi ;    /* velocity gradient -- temporary */
-   Real_t             *m_delv_eta ;
-   Real_t             *m_delv_zeta ;
 
-   Real_t             *m_delx_xi ;    /* coordinate gradient -- temporary */
-   Real_t             *m_delx_eta ;
-   Real_t             *m_delx_zeta ;
+   std::vector<double> m_delv_xi ;    /* velocity gradient -- temporary */
+   std::vector<double> m_delv_eta ;
+   std::vector<double> m_delv_zeta ;
+
+   std::vector<double> m_delx_xi ;    /* coordinate gradient -- temporary */
+   std::vector<double> m_delx_eta ;
+   std::vector<double> m_delx_zeta ;
    
    std::vector<Real_t> m_e ;   /* energy */
 
