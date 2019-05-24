@@ -1961,7 +1961,7 @@ void CalcQForElems(Domain& domain)
             2*domain.sizeX()*domain.sizeZ() + /* row ghosts */
             2*domain.sizeY()*domain.sizeZ() ; /* col ghosts */
 
-      domain.AllocateGradients(numElem, allElem);
+      domain.AllocateGradients(numElem, mpi.size, allElem);
 
 #if USE_MPI      
       CommRecv(domain, MSG_MONOQ, 3,
@@ -2021,7 +2021,7 @@ void CalcPressureForElems(Real_t* p_new, Real_t* bvc,
                           Real_t* compression, Real_t *vnewc,
                           Real_t pmin,
                           Real_t p_cut, Real_t eosvmax,
-                          Index_t length, Index_t *regElemList)
+                          Index_t length, std::vector<Index_t> regElemList)
 {
 #pragma omp parallel for firstprivate(length)
    for (Index_t i = 0; i < length ; ++i) {
@@ -2059,7 +2059,7 @@ void CalcEnergyForElems(Real_t* p_new, Real_t* e_new, Real_t* q_new,
                         Real_t* qq_old, Real_t* ql_old,
                         Real_t rho0,
                         Real_t eosvmax,
-                        Index_t length, Index_t *regElemList)
+                        Index_t length,  std::vector<Index_t> regElemList)
 {
    Real_t *pHalfStep = Allocate<Real_t>(length) ;
 
@@ -2186,7 +2186,7 @@ void CalcSoundSpeedForElems(Domain &domain,
                             Real_t *vnewc, Real_t rho0, Real_t *enewc,
                             Real_t *pnewc, Real_t *pbvc,
                             Real_t *bvc, Real_t ss4o3,
-                            Index_t len, Index_t *regElemList)
+                            Index_t len, std::vector<Index_t> regElemList)
 {
 #pragma omp parallel for firstprivate(rho0, ss4o3)
    for (Index_t i = 0; i < len ; ++i) {
@@ -2207,7 +2207,7 @@ void CalcSoundSpeedForElems(Domain &domain,
 
 static inline
 void EvalEOSForElems(Domain& domain, Real_t *vnewc,
-                     Int_t numElemReg, Index_t *regElemList, Int_t rep)
+                     Int_t numElemReg, std::vector<Index_t> regElemList, Int_t rep)
 {
    Real_t  e_cut = domain.e_cut() ;
    Real_t  p_cut = domain.p_cut() ;
@@ -2390,7 +2390,7 @@ void ApplyMaterialPropertiesForElems(Domain& domain)
 
     for (Int_t r=0 ; r<domain.numReg() ; r++) {
        Index_t numElemReg = domain.regElemSize(r);
-       Index_t *regElemList = domain.regElemlist(r);
+       std::vector <Index_t> regElemList = domain.regElemlist(r);
        Int_t rep;
        //Determine load imbalance for this region
        //round down the number with lowest cost
@@ -2450,7 +2450,7 @@ void LagrangeElements(Domain& domain, Index_t numElem)
 
 static inline
 void CalcCourantConstraintForElems(Domain &domain, Index_t length,
-                                   Index_t *regElemlist,
+                                   std::vector<Index_t> regElemlist,
                                    Real_t qqc, Real_t& dtcourant)
 {
 #if _OPENMP
@@ -2520,7 +2520,7 @@ void CalcCourantConstraintForElems(Domain &domain, Index_t length,
 
 static inline
 void CalcHydroConstraintForElems(Domain &domain, Index_t length,
-                                 Index_t *regElemlist, Real_t dvovmax, Real_t& dthydro)
+                                 std::vector<Index_t> regElemlist, Real_t dvovmax, Real_t& dthydro)
 {
 #if _OPENMP
    const Index_t threads = omp_get_max_threads();
@@ -2680,10 +2680,13 @@ int main(int argc, char *argv[])
 	MPI_Session_get_set_info(&mpi.session, "app://lulesh", &ps_info);
  	MPI_Group_create_from_session(&mpi.session, "app://lulesh", &mpi.current_group, ps_info);
 	MPI_Comm_create_from_group(mpi.current_group, NULL ,&mpi.current_comm, ps_info);
-
-   //if(MPI_Session_check_in_processet("app://lulesh")){
-	//	MPI_Session_iwatch_pset(&mpi.current_set_info);
-	//}
+   mpi.current_set_info = ps_info;
+    MPI_Comm_rank(mpi.current_comm, &mpi.rank);
+    MPI_Comm_size(mpi.current_comm, &mpi.size);
+   
+   if(MPI_Session_check_in_processet("app://lulesh")){
+		MPI_Session_iwatch_pset(&mpi.current_set_info);
+	}
 
 #endif
     
@@ -2759,9 +2762,58 @@ int main(int argc, char *argv[])
 //   for(Int_t i = 0; i < locDom->numReg(); i++)
 //      std::cout << "region" << i + 1<< "size" << locDom->regElemSize(i) <<std::endl;
    while((locDom->time() < locDom->stoptime()) && (locDom->cycle() < opts.its)) {
-
+      printf("iter: %d\n", locDom->cycle());
       TimeIncrement(*locDom) ;
       LagrangeLeapFrog(*locDom) ;
+
+      // HARD CODING for shrinking
+      if(mpi.rank >= 1 && (locDom->cycle() == opts.its / 2)){
+				MPI_Session_deletefrom_pset("app://lulesh",2);
+            printf("Removing myself.... :( Sorry you hated me!\n");
+		}
+      MPI_Barrier(mpi.current_comm);
+
+
+      //Check for changes in the process set
+      if(MPI_Session_check_psetupdate(mpi.current_set_info)){
+               MPI_Barrier(mpi.current_comm);
+
+         printf("%d/%d: Detected Change! MPI Current Communicator: %p \n", mpi.size, mpi.rank, mpi.current_comm);
+                        MPI_Barrier(mpi.current_comm);
+
+         if(!MPI_Session_check_in_processet("app://lulesh")){
+            //migration 
+            //while(1){ sleep(1); }
+            MPI_Session_finalize(&mpi.session);
+	         MPI_Session_free();
+         }
+         
+
+         //create new communication facilities
+         MpiData mpi_new;
+         mpi_new.session = mpi.session;
+         MPI_Session_get_set_info(&mpi.session, "app://lulesh", &mpi.current_set_info);
+         MPI_Group_create_from_session(&mpi.session, "app://lulesh", &mpi.current_group, mpi.current_set_info);
+         MPI_Comm_create_from_group(mpi.current_group, NULL, &mpi.current_comm, mpi.current_set_info);
+
+         MPI_Comm_size(mpi.current_comm, &mpi.size);
+         MPI_Comm_rank(mpi.current_comm, &mpi.rank);
+         MPI_Comm_size(mpi.current_comm, &numRanks) ;
+         MPI_Comm_rank(mpi.current_comm, &myRank) ;
+         	
+
+         printf("%d/%d: Now going to continue... My Comm: %p  \n", mpi.size, mpi.rank, mpi.current_comm);
+         printf("fuckyou\n");
+
+
+         //LULESH new init
+         InitMeshDecomp(numRanks, myRank, &col, &row, &plane, &side);
+           // update Domain according to the new process group
+         locDom = new Domain(numRanks, col, row, plane, opts.nx,
+                       side, opts.numReg, opts.balance, opts.cost);
+
+
+      }	
 
       if ((opts.showProg != 0) && (opts.quiet == 0) && (myRank == 0)) {
          std::cout << "cycle = " << locDom->cycle()       << ", "
