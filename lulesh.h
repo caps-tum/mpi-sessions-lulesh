@@ -12,7 +12,7 @@
    SEDOV_SYNC_POS_VEL_EARLY
    SEDOV_SYNC_POS_VEL_LATE
 */
-#define MPI_Abort(x,y) printf("%s, %s, %d\n",__func__, __FILE__, __LINE__); (void)y;
+//#define MPI_Abort(x,y) printf("%s, %s, %d\n",__func__, __FILE__, __LINE__); (void)y;
 
 #define SEDOV_SYNC_POS_VEL_EARLY 1
 #endif
