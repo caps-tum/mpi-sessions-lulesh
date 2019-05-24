@@ -163,6 +163,10 @@ Additional BSD Notice
 
 /* Work Routines */
 
+#ifdef USE_MPI
+MpiData mpi;
+#endif
+
 static inline
 void TimeIncrement(Domain& domain)
 {
@@ -185,7 +189,7 @@ void TimeIncrement(Domain& domain)
 #if USE_MPI      
       MPI_Allreduce(&gnewdt, &newdt, 1,
                     ((sizeof(Real_t) == 4) ? MPI_FLOAT : MPI_DOUBLE),
-                    MPI_MIN, MPI_COMM_WORLD) ;
+                    MPI_MIN, mpi.current_comm) ;
 #else
       newdt = gnewdt;
 #endif
@@ -1033,7 +1037,7 @@ void CalcHourglassControlForElems(Domain& domain,
       /* Do a check for negative volumes */
       if ( domain.v(i) <= Real_t(0.0) ) {
 #if USE_MPI         
-         MPI_Abort(MPI_COMM_WORLD, VolumeError) ;
+         MPI_Abort(mpi.current_comm, VolumeError) ;
 #else
          exit(VolumeError);
 #endif
@@ -1083,7 +1087,7 @@ void CalcVolumeForceForElems(Domain& domain)
       for ( Index_t k=0 ; k<numElem ; ++k ) {
          if (determ[k] <= Real_t(0.0)) {
 #if USE_MPI            
-            MPI_Abort(MPI_COMM_WORLD, VolumeError) ;
+            MPI_Abort(mpi.current_comm, VolumeError) ;
 #else
             exit(VolumeError);
 #endif
@@ -1598,7 +1602,7 @@ void CalcLagrangeElements(Domain& domain)
          if (domain.vnew(k) <= Real_t(0.0))
         {
 #if USE_MPI           
-           MPI_Abort(MPI_COMM_WORLD, VolumeError) ;
+           MPI_Abort(mpi.current_comm, VolumeError) ;
 #else
            exit(VolumeError);
 #endif
@@ -2001,7 +2005,7 @@ void CalcQForElems(Domain& domain)
 
       if(idx >= 0) {
 #if USE_MPI         
-         MPI_Abort(MPI_COMM_WORLD, QStopError) ;
+         MPI_Abort(mpi.current_comm, QStopError) ;
 #else
          exit(QStopError);
 #endif
@@ -2376,7 +2380,7 @@ void ApplyMaterialPropertiesForElems(Domain& domain)
           }
           if (vc <= 0.) {
 #if USE_MPI
-             MPI_Abort(MPI_COMM_WORLD, VolumeError) ;
+             MPI_Abort(mpi.current_comm, VolumeError) ;
 #else
              exit(VolumeError);
 #endif
@@ -2647,6 +2651,8 @@ void LagrangeLeapFrog(Domain& domain)
 
 /******************************************/
 
+
+
 int main(int argc, char *argv[])
 {
    Domain *locDom ;
@@ -2656,7 +2662,6 @@ int main(int argc, char *argv[])
 
 #if USE_MPI   
    Domain_member fieldData ;
-   
 #ifdef _OPENMP
    int thread_support;
 
@@ -2668,11 +2673,22 @@ int main(int argc, char *argv[])
         exit(1);
     }
 #else
-   MPI_Init(&argc, &argv);
+
+   MPI_Session_preparation(argc, argv);
+   MPI_Session_init(&mpi.session);
+   MPI_Info ps_info;
+	MPI_Session_get_set_info(&mpi.session, "app://lulesh", &ps_info);
+ 	MPI_Group_create_from_session(&mpi.session, "app://lulesh", &mpi.current_group, ps_info);
+	MPI_Comm_create_from_group(mpi.current_group, NULL ,&mpi.current_comm, ps_info);
+
+   //if(MPI_Session_check_in_processet("app://lulesh")){
+	//	MPI_Session_iwatch_pset(&mpi.current_set_info);
+	//}
+
 #endif
     
-   MPI_Comm_size(MPI_COMM_WORLD, &numRanks) ;
-   MPI_Comm_rank(MPI_COMM_WORLD, &myRank) ;
+   MPI_Comm_size(mpi.current_comm, &numRanks) ;
+   MPI_Comm_rank(mpi.current_comm, &myRank) ;
 #else
    numRanks = 1;
    myRank = 0;
@@ -2727,9 +2743,9 @@ int main(int argc, char *argv[])
             locDom->sizeX() + 1, locDom->sizeY() + 1, locDom->sizeZ() +  1,
             true, false) ;
    CommSBN(*locDom, 1, &fieldData) ;
-
+   printf("End Init\n");
    // End initialization
-   MPI_Barrier(MPI_COMM_WORLD);
+   MPI_Barrier(mpi.current_comm);
 #endif   
    
    // BEGIN timestep to solution */
@@ -2768,7 +2784,7 @@ int main(int argc, char *argv[])
    double elapsed_timeG;
 #if USE_MPI   
    MPI_Reduce(&elapsed_time, &elapsed_timeG, 1, MPI_DOUBLE,
-              MPI_MAX, 0, MPI_COMM_WORLD);
+              MPI_MAX, 0, mpi.current_comm);
 #else
    elapsed_timeG = elapsed_time;
 #endif
@@ -2785,7 +2801,8 @@ int main(int argc, char *argv[])
    delete locDom; 
 
 #if USE_MPI
-   MPI_Finalize() ;
+   MPI_Session_finalize(&mpi.session);
+	MPI_Session_free();
 #endif
 
    return 0 ;
