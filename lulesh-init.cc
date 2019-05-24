@@ -11,6 +11,7 @@
 #include <limits.h>
 #include <cstdlib>
 #include "lulesh.h"
+#include <assert.h>
 
 /////////////////////////////////////////////////////////////////////
 Domain::Domain(Int_t numRanks, Index_t colLoc,
@@ -172,6 +173,7 @@ Domain::SetupThreadSupportStructures()
 	fprintf(stderr,
 		"AllocateNodeElemIndexes(): nodeElemCornerList entry out of range!\n");
 #if USE_MPI
+  assert(-1);
 	MPI_Abort(mpi.current_comm, -1);
 #else
 	exit(-1);
@@ -721,6 +723,47 @@ void Domain::re_init_domain(Int_t numRanks, Index_t colLoc,
     m_lzetap.resize(numElem());
     m_elemBC.resize(numElem());
 
+   m_delv_xi.resize(numElem());
+   m_delv_eta.resize(numElem());
+   m_delv_zeta.resize(numElem());
+   m_dxx.resize(numElem());
+   m_dyy.resize(numElem());
+   m_dzz.resize(numElem());
+   m_delx_xi.resize(numElem());
+   m_delx_eta.resize(numElem());
+   m_delx_zeta.resize(numElem());
+   m_e.resize(numElem());
+   m_p.resize(numElem());
+   m_q.resize(numElem());
+   m_ql.resize(numElem());
+   m_qq.resize(numElem());
+   m_v.resize(numElem());
+   m_volo.resize(numElem());
+   m_delv.resize(numElem());
+   m_vdov.resize(numElem());
+   m_arealg.resize(numElem());
+   m_ss.resize(numElem());
+   m_elemMass.resize(numElem());
+
+
+   m_fx.resize(numNode());
+   m_fy.resize(numNode());
+   m_fz.resize(numNode());
+   m_x.resize(numNode());
+   m_y.resize(numNode());
+   m_z.resize(numNode());
+   m_xd.resize(numNode());
+   m_yd.resize(numNode());
+   m_zd.resize(numNode());
+   m_xdd.resize(numNode());
+   m_ydd.resize(numNode());
+   m_zdd.resize(numNode());
+   m_nodalMass.resize(numNode());   
+
+   m_vnew.resize(numElem()) ;
+                     
+   
+
     SetupCommBuffers(edgeNodes);
 
     // embed hexehedral elements in nodal point lattice
@@ -841,7 +884,8 @@ void InitMeshDecomp(Int_t numRanks, Int_t myRank,
    testProcs = Int_t(cbrt(Real_t(numRanks))+0.5) ;
    if (testProcs*testProcs*testProcs != numRanks) {
       printf("Num processors must be a cube of an integer (1, 8, 27, ...)\n") ;
-#if USE_MPI      
+#if USE_MPI  
+        assert(-1);
       MPI_Abort(mpi.current_comm, -1) ;
 #else
       exit(-1);
@@ -850,6 +894,7 @@ void InitMeshDecomp(Int_t numRanks, Int_t myRank,
    if (sizeof(Real_t) != 4 && sizeof(Real_t) != 8) {
       printf("MPI operations only support float and double right now...\n");
 #if USE_MPI      
+        assert(-1);
       MPI_Abort(mpi.current_comm, -1) ;
 #else
       exit(-1);
@@ -858,6 +903,7 @@ void InitMeshDecomp(Int_t numRanks, Int_t myRank,
    if (MAX_FIELDS_PER_MPI_COMM > CACHE_COHERENCE_PAD_REAL) {
       printf("corner element comm buffers too small.  Fix code.\n") ;
 #if USE_MPI      
+        assert(-1);
       MPI_Abort(mpi.current_comm, -1) ;
 #else
       exit(-1);
@@ -872,12 +918,14 @@ void InitMeshDecomp(Int_t numRanks, Int_t myRank,
    if (dx*dy*dz != numRanks) {
       printf("error -- must have as many domains as procs\n") ;
 #if USE_MPI      
+        assert(-1);
       MPI_Abort(mpi.current_comm, -1) ;
 #else
       exit(-1);
 #endif
    }
    Int_t remainder = dx*dy*dz % numRanks ;
+   //printf("Remainder %d", remainder);
    if (myRank < remainder) {
       myDom = myRank*( 1+ (dx*dy*dz / numRanks)) ;
    }
@@ -885,6 +933,8 @@ void InitMeshDecomp(Int_t numRanks, Int_t myRank,
       myDom = remainder*( 1+ (dx*dy*dz / numRanks)) +
          (myRank - remainder)*(dx*dy*dz/numRanks) ;
    }
+     // printf("myDom %d", myDom);
+
 
    *col = myDom % dx ;
    *row = (myDom / dx) % dy ;

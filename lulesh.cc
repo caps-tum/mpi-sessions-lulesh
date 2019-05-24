@@ -154,7 +154,8 @@ Additional BSD Notice
 #include <sys/time.h>
 #include <iostream>
 #include <unistd.h>
-
+#include <limits>
+#include <assert.h>
 #if _OPENMP
 # include <omp.h>
 #endif
@@ -223,6 +224,8 @@ void TimeIncrement(Domain& domain)
    domain.time() += domain.deltatime() ;
 
    ++domain.cycle() ;
+
+   //printf("FIN Time Increment. \n");
 }
 
 /******************************************/
@@ -287,6 +290,9 @@ void InitStressTermsForElems(Domain &domain,
    for (Index_t i = 0 ; i < numElem ; ++i){
       sigxx[i] = sigyy[i] = sigzz[i] =  - domain.p(i) - domain.q(i) ;
    }
+
+        //printf("FIN %s\n", __PRETTY_FUNCTION__);
+
 }
 
 /******************************************/
@@ -1036,7 +1042,8 @@ void CalcHourglassControlForElems(Domain& domain,
 
       /* Do a check for negative volumes */
       if ( domain.v(i) <= Real_t(0.0) ) {
-#if USE_MPI         
+#if USE_MPI 
+        assert(-1);
          MPI_Abort(mpi.current_comm, VolumeError) ;
 #else
          exit(VolumeError);
@@ -1072,6 +1079,7 @@ void CalcVolumeForceForElems(Domain& domain)
       Real_t *sigyy  = Allocate<Real_t>(numElem) ;
       Real_t *sigzz  = Allocate<Real_t>(numElem) ;
       Real_t *determ = Allocate<Real_t>(numElem) ;
+     printf("STRAT %s\n", __PRETTY_FUNCTION__);
 
       /* Sum contributions to total stress tensor */
       InitStressTermsForElems(domain, sigxx, sigyy, sigzz, numElem);
@@ -1083,10 +1091,12 @@ void CalcVolumeForceForElems(Domain& domain)
                                domain.numNode()) ;
 
       // check for negative element volume
+           printf("BEFORE ABORT? %s\n", __PRETTY_FUNCTION__);
+
 #pragma omp parallel for firstprivate(numElem)
       for ( Index_t k=0 ; k<numElem ; ++k ) {
          if (determ[k] <= Real_t(0.0)) {
-#if USE_MPI            
+#if USE_MPI 
             MPI_Abort(mpi.current_comm, VolumeError) ;
 #else
             exit(VolumeError);
@@ -1095,6 +1105,7 @@ void CalcVolumeForceForElems(Domain& domain)
       }
 
       CalcHourglassControlForElems(domain, determ, hgcoef) ;
+    // printf("FIN %s\n", __PRETTY_FUNCTION__);
 
       Release(&determ) ;
       Release(&sigzz) ;
@@ -1110,6 +1121,7 @@ static inline void CalcForceForNodes(Domain& domain)
   Index_t numNode = domain.numNode() ;
 
 #if USE_MPI  
+   printf("Before COMMRECV CalcForceForNodes\n");
   CommRecv(domain, MSG_COMM_SBN, 3,
            domain.sizeX() + 1, domain.sizeY() + 1, domain.sizeZ() + 1,
            true, false) ;
@@ -1135,6 +1147,8 @@ static inline void CalcForceForNodes(Domain& domain)
            domain.sizeX() + 1, domain.sizeY() + 1, domain.sizeZ() +  1,
            true, false) ;
   CommSBN(domain, 3, fieldData) ;
+     //printf("FIN %s\n", __PRETTY_FUNCTION__);
+
 #endif  
 }
 
@@ -1245,7 +1259,7 @@ void LagrangeNodal(Domain& domain)
             false, false) ;
 #endif
 #endif
-   
+   //printf("FIN CalcForceForNodes\n");
    CalcAccelerationForNodes(domain, domain.numNode());
    
    ApplyAccelerationBoundaryConditionsForNodes(domain);
@@ -1602,6 +1616,7 @@ void CalcLagrangeElements(Domain& domain)
          if (domain.vnew(k) <= Real_t(0.0))
         {
 #if USE_MPI           
+        assert(-1);
            MPI_Abort(mpi.current_comm, VolumeError) ;
 #else
            exit(VolumeError);
@@ -2005,6 +2020,7 @@ void CalcQForElems(Domain& domain)
 
       if(idx >= 0) {
 #if USE_MPI         
+        assert(-1);
          MPI_Abort(mpi.current_comm, QStopError) ;
 #else
          exit(QStopError);
@@ -2380,6 +2396,7 @@ void ApplyMaterialPropertiesForElems(Domain& domain)
           }
           if (vc <= 0.) {
 #if USE_MPI
+        assert(-1);
              MPI_Abort(mpi.current_comm, VolumeError) ;
 #else
              exit(VolumeError);
@@ -2612,6 +2629,7 @@ void LagrangeLeapFrog(Domain& domain)
     * applied boundary conditions and slide surface considerations */
    LagrangeNodal(domain);
 
+   //printf("FIN LagrangeNodal\n");
 
 #ifdef SEDOV_SYNC_POS_VEL_LATE
 #endif
@@ -2762,12 +2780,20 @@ int main(int argc, char *argv[])
 //   for(Int_t i = 0; i < locDom->numReg(); i++)
 //      std::cout << "region" << i + 1<< "size" << locDom->regElemSize(i) <<std::endl;
    while((locDom->time() < locDom->stoptime()) && (locDom->cycle() < opts.its)) {
-      printf("iter: %d\n", locDom->cycle());
+      printf("starting iter: %d\n", locDom->cycle()+1);
+      
       TimeIncrement(*locDom) ;
       LagrangeLeapFrog(*locDom) ;
+      if ((opts.showProg != 0) && (opts.quiet == 0) && (myRank == 0)) {
+         std::cout << "cycle = " << locDom->cycle()       << ", "
+                   << std::scientific
+                   << "time = " << double(locDom->time()) << ", "
+                   << "dt="     << double(locDom->deltatime()) << "\n";
+         std::cout.unsetf(std::ios_base::floatfield);
+      }
 
       // HARD CODING for shrinking
-      if(mpi.rank >= 1 && (locDom->cycle() == opts.its / 2)){
+      if(mpi.rank >= 1 && (locDom->cycle() == 6)){
 				MPI_Session_deletefrom_pset("app://lulesh",2);
             printf("Removing myself.... :( Sorry you hated me!\n");
 		}
@@ -2776,19 +2802,186 @@ int main(int argc, char *argv[])
 
       //Check for changes in the process set
       if(MPI_Session_check_psetupdate(mpi.current_set_info)){
-               MPI_Barrier(mpi.current_comm);
+         MPI_Barrier(mpi.current_comm);
 
          printf("%d/%d: Detected Change! MPI Current Communicator: %p \n", mpi.size, mpi.rank, mpi.current_comm);
                         MPI_Barrier(mpi.current_comm);
 
+         unsigned long globalsize_elements = side*side*side*opts.nx*opts.nx*opts.nx;
+         unsigned long globalsize_nodal = (opts.nx*side+1)*(opts.nx*side+1)*(opts.nx*side+1);
+#define DBL_MAX 99999999999
+         std::vector<double> m_fx(globalsize_nodal, DBL_MAX);
+         std::vector<double> m_fy(globalsize_nodal, DBL_MAX);
+         std::vector<double> m_fz(globalsize_nodal, DBL_MAX);
+         std::vector<double> m_x(globalsize_nodal, DBL_MAX);
+         std::vector<double> m_y(globalsize_nodal, DBL_MAX);
+         std::vector<double> m_z(globalsize_nodal, DBL_MAX);
+         std::vector<double> m_xd(globalsize_nodal, DBL_MAX);
+         std::vector<double> m_yd(globalsize_nodal, DBL_MAX);
+         std::vector<double> m_zd(globalsize_nodal, DBL_MAX);
+         std::vector<double> m_xdd(globalsize_nodal, DBL_MAX);
+         std::vector<double> m_ydd(globalsize_nodal, DBL_MAX);
+         std::vector<double> m_zdd(globalsize_nodal, DBL_MAX);
+         std::vector<double> m_nodalMass(globalsize_nodal, DBL_MAX);
+
+
+         std::vector<double> m_delv_xi(globalsize_elements, DBL_MAX);
+         std::vector<double> m_delv_eta(globalsize_elements, DBL_MAX);
+         std::vector<double> m_delv_zeta(globalsize_elements, DBL_MAX);
+         std::vector<double> m_dxx(globalsize_elements, DBL_MAX);
+         std::vector<double> m_dyy(globalsize_elements, DBL_MAX);
+         std::vector<double> m_dzz(globalsize_elements, DBL_MAX);
+         std::vector<double> m_delx_xi(globalsize_elements, DBL_MAX);
+         std::vector<double> m_delx_eta(globalsize_elements, DBL_MAX);
+         std::vector<double> m_delx_zeta(globalsize_elements, DBL_MAX);
+         std::vector<double> m_e(globalsize_elements, DBL_MAX);
+         std::vector<double> m_p(globalsize_elements, DBL_MAX);
+         std::vector<double> m_q(globalsize_elements, DBL_MAX);
+         std::vector<double> m_ql(globalsize_elements, DBL_MAX);
+         std::vector<double> m_qq(globalsize_elements, DBL_MAX);
+         std::vector<double> m_v(globalsize_elements, DBL_MAX);
+         std::vector<double> m_volo(globalsize_elements, DBL_MAX);
+         std::vector<double> m_delv(globalsize_elements, DBL_MAX);
+         std::vector<double> m_vdov(globalsize_elements, DBL_MAX);
+         std::vector<double> m_arealg(globalsize_elements, DBL_MAX);
+         std::vector<double> m_ss(globalsize_elements, DBL_MAX);
+         std::vector<double> m_elemMass(globalsize_elements, DBL_MAX);
+
+         
+         
+       
+         mapLocaltoGlobalNodes(numRanks,myRank,*locDom,
+            m_fx, m_fy,m_fz,  m_x, m_y, m_z, 
+               m_xd, m_yd,m_zd,
+               m_xdd, m_ydd, m_zdd, 
+               m_nodalMass
+         );
+         mapLocaltoGlobalElements(numRanks,myRank,*locDom,
+               m_delv_xi,m_delv_eta,m_delv_zeta,
+               m_dxx,
+               m_dyy,
+               m_dzz,
+               m_delx_xi,
+               m_delx_eta,
+               m_delx_zeta,
+               m_e,
+               m_p,
+               m_q,
+               m_ql,
+               m_qq,
+               m_v,
+               m_volo,
+               m_delv,
+               m_vdov,
+               m_arealg,
+               m_ss,
+               m_elemMass
+               );
+         printf("PACK DONE!\n");
+          
+         /*
+         printf("The value is \n");
+         for(int i=0; i<m_delv_zeta.size(); ++i)
+               printf("Rank: %d The value %d is %f\n", mpi.rank, i, m_delv_zeta[i]);
+         */
+         std::vector<double> m_fx_sum(globalsize_nodal, 0);
+         MPI_Allreduce(m_fx.data(), m_fx_sum.data(), globalsize_nodal, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
+
+         std::vector<double> m_fy_sum(globalsize_nodal, 0);
+         MPI_Allreduce(m_fy.data(), m_fy_sum.data(), globalsize_nodal, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
+
+         std::vector<double> m_fz_sum(globalsize_nodal, 0);
+         MPI_Allreduce(m_fz.data(), m_fz_sum.data(), globalsize_nodal, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
+
+         std::vector<double> m_nodalMass_sum(globalsize_nodal, 0);
+         MPI_Allreduce(m_nodalMass.data(), m_nodalMass_sum.data(), globalsize_nodal, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
+
+         std::vector<double> m_delv_xi_sum(globalsize_elements, 0);
+         MPI_Allreduce(m_delv_xi.data(), m_delv_xi_sum.data(), globalsize_elements, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
+
+         std::vector<double> m_delv_eta_sum(globalsize_elements, 0);
+         MPI_Allreduce(m_delv_eta.data(), m_delv_eta_sum.data(), globalsize_elements, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
+         
+         std::vector<double> m_delv_zeta_sum(globalsize_elements, 0);
+         MPI_Allreduce(m_delv_zeta.data(), m_delv_zeta_sum.data(), globalsize_elements, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
+
+         std::vector<double> sm_x(globalsize_nodal, 0);
+         std::vector<double> sm_y(globalsize_nodal, 0);
+         std::vector<double> sm_z(globalsize_nodal, 0);
+         std::vector<double> sm_xd(globalsize_nodal, 0);
+         std::vector<double> sm_yd(globalsize_nodal, 0);
+         std::vector<double> sm_zd(globalsize_nodal, 0);
+         std::vector<double> sm_xdd(globalsize_nodal, 0);
+         std::vector<double> sm_ydd(globalsize_nodal, 0);
+         std::vector<double> sm_zdd(globalsize_nodal, 0);
+         std::vector<double> sm_dxx(globalsize_elements, DBL_MAX);
+         std::vector<double> sm_dyy(globalsize_elements, DBL_MAX);
+         std::vector<double> sm_dzz(globalsize_elements, DBL_MAX);
+         std::vector<double> sm_delx_xi(globalsize_elements, DBL_MAX);
+         std::vector<double> sm_delx_eta(globalsize_elements, DBL_MAX);
+         std::vector<double> sm_delx_zeta(globalsize_elements, DBL_MAX);
+         std::vector<double> sm_e(globalsize_elements, DBL_MAX);
+         std::vector<double> sm_p(globalsize_elements, DBL_MAX);
+         std::vector<double> sm_q(globalsize_elements, DBL_MAX);
+         std::vector<double> sm_ql(globalsize_elements, DBL_MAX);
+         std::vector<double> sm_qq(globalsize_elements, DBL_MAX);
+         std::vector<double> sm_v(globalsize_elements, DBL_MAX);
+         std::vector<double> sm_volo(globalsize_elements, DBL_MAX);
+         std::vector<double> sm_delv(globalsize_elements, DBL_MAX);
+         std::vector<double> sm_vdov(globalsize_elements, DBL_MAX);
+         std::vector<double> sm_arealg(globalsize_elements, DBL_MAX);
+         std::vector<double> sm_ss(globalsize_elements, DBL_MAX);
+         std::vector<double> sm_elemMass(globalsize_elements, DBL_MAX);
+
+         MPI_Allreduce(m_x.data(), sm_x.data(), globalsize_nodal, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
+         MPI_Allreduce(m_y.data(), sm_y.data(), globalsize_nodal, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
+         MPI_Allreduce(m_z.data(), sm_z.data(), globalsize_nodal, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
+         MPI_Allreduce(m_xd.data(), sm_xd.data(), globalsize_nodal, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
+         MPI_Allreduce(m_yd.data(), sm_yd.data(), globalsize_nodal, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
+         MPI_Allreduce(m_zd.data(), sm_zd.data(), globalsize_nodal, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
+         MPI_Allreduce(m_zdd.data(), sm_xdd.data(), globalsize_nodal, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
+         MPI_Allreduce(m_ydd.data(), sm_ydd.data(), globalsize_nodal, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
+         MPI_Allreduce(m_zdd.data(), sm_zdd.data(), globalsize_nodal, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
+         MPI_Allreduce(m_dxx.data(), sm_dxx.data(), globalsize_elements, MPI_DOUBLE, MPI_MIN, mpi.current_comm);        
+         MPI_Allreduce(m_dyy.data(), sm_dyy.data(), globalsize_elements, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
+         MPI_Allreduce(m_dzz.data(), sm_dzz.data(), globalsize_elements, MPI_DOUBLE, MPI_MIN, mpi.current_comm);        
+         MPI_Allreduce(m_delx_xi.data(), sm_delx_xi.data(), globalsize_elements, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
+         MPI_Allreduce(m_delx_eta.data(), sm_delx_eta.data(), globalsize_elements, MPI_DOUBLE, MPI_MIN, mpi.current_comm);        
+         MPI_Allreduce(m_delx_zeta.data(), sm_delx_zeta.data(), globalsize_elements, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
+         MPI_Allreduce(m_e.data(), sm_e.data(), globalsize_elements, MPI_DOUBLE, MPI_MIN, mpi.current_comm);        
+         MPI_Allreduce(m_p.data(), sm_p.data(), globalsize_elements, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
+         MPI_Allreduce(m_q.data(), sm_q.data(), globalsize_elements, MPI_DOUBLE, MPI_MIN, mpi.current_comm);        
+         MPI_Allreduce(m_ql.data(), sm_ql.data(), globalsize_elements, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
+         MPI_Allreduce(m_qq.data(), sm_qq.data(), globalsize_elements, MPI_DOUBLE, MPI_MIN, mpi.current_comm);        
+         MPI_Allreduce(m_v.data(), sm_v.data(), globalsize_elements, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
+         MPI_Allreduce(m_volo.data(), sm_volo.data(), globalsize_elements, MPI_DOUBLE, MPI_MIN, mpi.current_comm);        
+         MPI_Allreduce(m_delv.data(), sm_delv.data(), globalsize_elements, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
+         MPI_Allreduce(m_vdov.data(), sm_vdov.data(), globalsize_elements, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
+         MPI_Allreduce(m_arealg.data(), sm_arealg.data(), globalsize_elements, MPI_DOUBLE, MPI_MIN, mpi.current_comm);        
+         MPI_Allreduce(m_ss.data(), sm_ss.data(), globalsize_elements, MPI_DOUBLE, MPI_MIN, mpi.current_comm);        
+         MPI_Allreduce(m_elemMass.data(), sm_elemMass.data(), globalsize_elements, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
+
+
+         printf("DATA MIGRATION DONE!\n");
+         /*
+             for(int i=0; i<m_fx_sum.size(); ++i){
+               if(mpi.rank==0){
+                  printf("Rank: %d The value before %d is %f\n", mpi.rank, i, m_fx_sum[i]);
+               }
+         }
+      */
          if(!MPI_Session_check_in_processet("app://lulesh")){
             //migration 
             //while(1){ sleep(1); }
+            printf("You are done? Happy? Shutting Down...\n");
             MPI_Session_finalize(&mpi.session);
 	         MPI_Session_free();
          }
-         
-
+         /*
+         printf("The value is after REDUCE\n");
+         for(int i=0; i<m_fx_sum.size(); ++i)
+               printf("The value is %f\n", m_fx_sum[i]);
+         */
          //create new communication facilities
          MpiData mpi_new;
          mpi_new.session = mpi.session;
@@ -2800,28 +2993,66 @@ int main(int argc, char *argv[])
          MPI_Comm_rank(mpi.current_comm, &mpi.rank);
          MPI_Comm_size(mpi.current_comm, &numRanks) ;
          MPI_Comm_rank(mpi.current_comm, &myRank) ;
-         	
 
-         printf("%d/%d: Now going to continue... My Comm: %p  \n", mpi.size, mpi.rank, mpi.current_comm);
-         printf("fuckyou\n");
-
-
+         opts.nx = opts.nx * side / 1;
          //LULESH new init
          InitMeshDecomp(numRanks, myRank, &col, &row, &plane, &side);
            // update Domain according to the new process group
-         locDom = new Domain(numRanks, col, row, plane, opts.nx,
-                       side, opts.numReg, opts.balance, opts.cost);
+
+         locDom -> re_init_domain(numRanks, col, row, plane, opts.nx,
+                                    side, opts.numReg, opts.balance, opts.cost);
+         printf("Domain has been reinitialized. Configurations: \n");
+         printf("numRanks: %d, side: %d, nx: %d\n", numRanks, side, opts.nx);
+         printf("numElem: %d, numNode: %d", locDom->numElem(),locDom->numNode());
+
+         mapGlobaltoLocalNodes(numRanks,myRank,*locDom,
+            m_fx_sum, m_fy_sum, m_fz_sum, sm_x, sm_y, sm_z, 
+                        sm_xd, sm_yd,sm_zd,
+                        sm_xdd, sm_ydd, sm_zdd, 
+                         m_nodalMass_sum
+         );
+         mapGlobaltoLocalElements(numRanks,myRank,*locDom,
+                        m_delv_xi_sum, m_delv_eta_sum, m_delv_zeta_sum,
+                        sm_dxx,
+                        sm_dyy,
+                        sm_dzz,
+                        sm_delx_xi,
+                        sm_delx_eta,
+                        sm_delx_zeta,
+                        sm_e,
+                        sm_p,
+                        sm_q,
+                        sm_ql,
+                        sm_qq,
+                        sm_v,
+                        sm_volo,
+                        sm_delv,
+                        sm_vdov,
+                        sm_arealg,
+                        sm_ss,
+                        sm_elemMass
+                        );
+         printf("UNPACK DONE!\n");
+         /*
+         for(int i=0; i<locDom->m_fx.size(); ++i){
+               if(mpi.rank==0){
+                  printf("Rank: %d The local value before %d is %f\n", mpi.rank, i, locDom->m_fx[i]);
+               }
+         }*/
 
 
+         printf("m_delv_xi_sum: %d, loc: %d", m_delv_xi_sum.size(), locDom->m_delv_xi.size());
+         for(int i=0; i<locDom->m_dxx.size(); ++i){
+               if(mpi.rank==0){
+                  printf("Rank: %d The local value before %d is %f\n", mpi.rank, i, locDom->m_dxx[i]);
+               }
+         }
+
+         printf("%d/%d: Now going to continue... My Comm: %p  \n", mpi.size, mpi.rank, mpi.current_comm);
+         printf("fuckyou\n");
       }	
 
-      if ((opts.showProg != 0) && (opts.quiet == 0) && (myRank == 0)) {
-         std::cout << "cycle = " << locDom->cycle()       << ", "
-                   << std::scientific
-                   << "time = " << double(locDom->time()) << ", "
-                   << "dt="     << double(locDom->deltatime()) << "\n";
-         std::cout.unsetf(std::ios_base::floatfield);
-      }
+      
    }
 
    // Use reduced max elapsed time
