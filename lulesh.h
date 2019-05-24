@@ -19,6 +19,7 @@
 #include <math.h>
 #include <stdlib.h>
 #include <vector>
+#include <mpisessions.h>
 
 //**************************************************
 // Allow flexibility for arithmetic representations 
@@ -120,6 +121,22 @@ void Release(T **ptr)
       *ptr = NULL ;
    }
 }
+
+//////////////////////////////////////////////////////
+// MPI_SESSIONS EXTENSION DATA STRUCTURE
+//////////////////////////////////////////////////////
+#ifdef USE_MPI
+struct MpiData
+{
+    int size;
+    int rank;
+	MPI_Session *session;
+	MPI_Comm current_comm;
+   MPI_Group current_group;
+   MPI_Info current_set_info;
+};
+extern MpiData mpi;
+#endif
 
 //////////////////////////////////////////////////////
 // Primary data structure

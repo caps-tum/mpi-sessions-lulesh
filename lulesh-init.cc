@@ -325,7 +325,7 @@ Domain::SetupThreadSupportStructures()
 	fprintf(stderr,
 		"AllocateNodeElemIndexes(): nodeElemCornerList entry out of range!\n");
 #if USE_MPI
-	MPI_Abort(MPI_COMM_WORLD, -1);
+	MPI_Abort(mpi.current_comm, -1);
 #else
 	exit(-1);
 #endif
@@ -402,7 +402,7 @@ Domain::CreateRegionIndexSets(Int_t nr, Int_t balance)
 {
 #if USE_MPI   
    int myRank;
-   MPI_Comm_rank(MPI_COMM_WORLD, &myRank) ;
+   MPI_Comm_rank(mpi.current_comm, &myRank) ;
    srand(myRank);
 #else
    srand(0);
@@ -685,7 +685,7 @@ void InitMeshDecomp(Int_t numRanks, Int_t myRank,
    if (testProcs*testProcs*testProcs != numRanks) {
       printf("Num processors must be a cube of an integer (1, 8, 27, ...)\n") ;
 #if USE_MPI      
-      MPI_Abort(MPI_COMM_WORLD, -1) ;
+      MPI_Abort(mpi.current_comm, -1) ;
 #else
       exit(-1);
 #endif
@@ -693,7 +693,7 @@ void InitMeshDecomp(Int_t numRanks, Int_t myRank,
    if (sizeof(Real_t) != 4 && sizeof(Real_t) != 8) {
       printf("MPI operations only support float and double right now...\n");
 #if USE_MPI      
-      MPI_Abort(MPI_COMM_WORLD, -1) ;
+      MPI_Abort(mpi.current_comm, -1) ;
 #else
       exit(-1);
 #endif
@@ -701,7 +701,7 @@ void InitMeshDecomp(Int_t numRanks, Int_t myRank,
    if (MAX_FIELDS_PER_MPI_COMM > CACHE_COHERENCE_PAD_REAL) {
       printf("corner element comm buffers too small.  Fix code.\n") ;
 #if USE_MPI      
-      MPI_Abort(MPI_COMM_WORLD, -1) ;
+      MPI_Abort(mpi.current_comm, -1) ;
 #else
       exit(-1);
 #endif
@@ -715,7 +715,7 @@ void InitMeshDecomp(Int_t numRanks, Int_t myRank,
    if (dx*dy*dz != numRanks) {
       printf("error -- must have as many domains as procs\n") ;
 #if USE_MPI      
-      MPI_Abort(MPI_COMM_WORLD, -1) ;
+      MPI_Abort(mpi.current_comm, -1) ;
 #else
       exit(-1);
 #endif
