@@ -4,7 +4,7 @@
 
 #if USE_MPI
 #include <mpi.h>
-
+#include <assert.h>
 /*
    define one of these three symbols:
 
@@ -12,6 +12,7 @@
    SEDOV_SYNC_POS_VEL_EARLY
    SEDOV_SYNC_POS_VEL_LATE
 */
+#define MPI_Abort(x,y) printf("%s, %s, %d\n",__func__, __FILE__, __LINE__); (void)y;
 
 #define SEDOV_SYNC_POS_VEL_EARLY 1
 #endif
@@ -506,7 +507,7 @@ class Domain {
    MPI_Request sendRequest[26] ; // 6 faces + 12 edges + 8 corners 
 #endif
 
-  private:
+  //private:
 
    void BuildMesh(Int_t nx, Int_t edgeNodes, Int_t edgeElems);
    void SetupThreadSupportStructures();
@@ -713,3 +714,86 @@ void CommMonoQ(Domain& domain);
 // lulesh-init
 void InitMeshDecomp(Int_t numRanks, Int_t myRank,
                     Int_t *col, Int_t *row, Int_t *plane, Int_t *side);
+void mapLocaltoGlobalNodes(int numRanks,
+                              int myRank,
+                              Domain& locDom,
+                              std::vector<double>& m_fx,
+                              std::vector<double>& m_fy,
+                              std::vector<double>& m_fz,
+                              std::vector<double>& m_x,
+                              std::vector<double>& m_y,
+                              std::vector<double>& m_z,
+                              std::vector<double>& m_xd,
+                              std::vector<double>& m_yd,
+                              std::vector<double>& m_zd,
+                              std::vector<double>& m_xdd,
+                              std::vector<double>& m_ydd,
+                              std::vector<double>& m_zdd,
+                              std::vector<double>& m_nodalMass);
+ void mapLocaltoGlobalElements(int numRanks,
+                              int myRank,
+                              Domain& locDom,
+                              std::vector<double>& m_delv_xi,
+                              std::vector<double>& m_delv_eta,
+                              std::vector<double>& m_delv_zeta,
+                              std::vector<double>& m_dxx,
+                              std::vector<double>& m_dyy,
+                              std::vector<double>& m_dzz,
+                              std::vector<double>& m_delx_xi,
+                              std::vector<double>& m_delx_eta,
+                              std::vector<double>& m_delx_zeta,
+                              std::vector<double>& m_e,
+                              std::vector<double>& m_p,
+                              std::vector<double>& m_q,
+                              std::vector<double>& m_ql,
+                              std::vector<double>& m_qq,
+                              std::vector<double>& m_v,
+                              std::vector<double>& m_volo,
+                              std::vector<double>& m_delv,
+                              std::vector<double>& m_vdov,
+                              std::vector<double>& m_arealg,
+                              std::vector<double>& m_ss,
+                              std::vector<double>& m_elemMass
+                             );                             
+void mapGlobaltoLocalNodes(int numRanks,
+                              int myRank,
+                              Domain& locDom,
+                              std::vector<double>& m_fx,
+                              std::vector<double>& m_fy,
+                              std::vector<double>& m_fz,
+                              std::vector<double>& m_x,
+                              std::vector<double>& m_y,
+                              std::vector<double>& m_z,
+                              std::vector<double>& m_xd,
+                              std::vector<double>& m_yd,
+                              std::vector<double>& m_zd,
+                              std::vector<double>& m_xdd,
+                              std::vector<double>& m_ydd,
+                              std::vector<double>& m_zdd,
+                              std::vector<double>& m_nodalMass);
+
+void mapGlobaltoLocalElements(int numRanks,
+                              int myRank,
+                              Domain& locDom,
+                              std::vector<double>& m_delv_xi,
+                              std::vector<double>& m_delv_eta,
+                              std::vector<double>& m_delv_zeta,
+                              std::vector<double>& m_dxx,
+                              std::vector<double>& m_dyy,
+                              std::vector<double>& m_dzz,
+                              std::vector<double>& m_delx_xi,
+                              std::vector<double>& m_delx_eta,
+                              std::vector<double>& m_delx_zeta,
+                              std::vector<double>& m_e,
+                              std::vector<double>& m_p,
+                              std::vector<double>& m_q,
+                              std::vector<double>& m_ql,
+                              std::vector<double>& m_qq,
+                              std::vector<double>& m_v,
+                              std::vector<double>& m_volo,
+                              std::vector<double>& m_delv,
+                              std::vector<double>& m_vdov,
+                              std::vector<double>& m_arealg,
+                              std::vector<double>& m_ss,
+                              std::vector<double>& m_elemMass
+                             );
