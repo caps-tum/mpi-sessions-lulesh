@@ -169,6 +169,12 @@ MpiData mpi;
 #endif
 
 static inline
+bool is_perfect_cube(int n) {
+    int root(round(cbrt(n)));
+    return n == root * root * root;
+}
+
+static inline
 void TimeIncrement(Domain& domain)
 {
    Real_t targetdt = domain.stoptime() - domain.time() ;
@@ -2799,12 +2805,13 @@ int main(int argc, char *argv[])
 //   for(Int_t i = 0; i < locDom->numReg(); i++)
 //      std::cout << "region" << i + 1<< "size" << locDom->regElemSize(i) <<std::endl;
    while((locDom->time() < locDom->stoptime()) && (locDom->cycle() < opts.its)) {
+#ifdef DEBUG
       printf("starting iter: %d\n", locDom->cycle()+1);
-      
+#endif
       TimeIncrement(*locDom) ;
-
+#ifdef DEBUG
       printf("Time Increment iter: %d\n", locDom->cycle()+1);
-
+#endif
       LagrangeLeapFrog(*locDom) ;
 
       if ((opts.showProg != 0) && (opts.quiet == 0) && (myRank == 0)) {
@@ -2815,16 +2822,17 @@ int main(int argc, char *argv[])
          std::cout.unsetf(std::ios_base::floatfield);
       }
 
-
       if(opts.repart>0 &&  (locDom->cycle() == opts.cycle)) // condition for repartitioning 
       {
-         double newside; int diffsize; 
-         newside = cbrt(opts.repart);
-         if (newside - ((int) floor(newside+0.1)) != 0){
+         int newside; int diffsize; 
+         if (!is_perfect_cube(opts.repart)){
+            printf("newSide: %.9f", newside);
             printf("Cannot repart to a non-cubic number.\n");
              MPI_Abort(MPI_COMM_WORLD,-1);
          }
-         double new_nx = (double)opts.nx * (double)side / (double) newside;
+         newside = cbrt(opts.repart);
+
+         double new_nx = (double)opts.nx * (double)side / newside;
          double verifier;
 
          if(modf(new_nx, &verifier) != 0.0){
@@ -2866,6 +2874,7 @@ int main(int argc, char *argv[])
          printf("numElem: %d, numNode: %d\n", locDom->numElem(),locDom->numNode());
          double repart_start = MPI_Wtime();
 
+         //packing elements into element buffer
          unsigned long globalsize_elements = side*side*side*opts.nx*opts.nx*opts.nx;
          unsigned long globalsize_nodal = (opts.nx*side+1)*(opts.nx*side+1)*(opts.nx*side+1);
 #define DBL_MAX std::numeric_limits<double>::max()
@@ -2934,7 +2943,7 @@ int main(int argc, char *argv[])
 #ifdef DEBUG               
          printf("PACK DONE!\n");
 #endif          
-         
+         // element buffer for reduction. 
          std::vector<double> m_fx_sum(globalsize_nodal, DBL_MAX);
          std::vector<double> m_fy_sum(globalsize_nodal, DBL_MAX);
          std::vector<double> m_fz_sum(globalsize_nodal, DBL_MAX);
@@ -3144,7 +3153,6 @@ int main(int argc, char *argv[])
 #ifdef DEBUG                        
          printf("UNPACK DONE!\n");
 #endif
-
          double duration = MPI_Wtime() - repart_start;
 
            printf("After repart\n");
@@ -3155,7 +3163,6 @@ int main(int argc, char *argv[])
          printf("%d/%d: Now going to continue... My Comm: %p  \n", mpi.size, mpi.rank, mpi.current_comm);
          //printf("\n");
       }	
-
       
    }
 

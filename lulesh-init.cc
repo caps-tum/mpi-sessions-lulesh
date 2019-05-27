@@ -227,7 +227,9 @@ Domain::SetupCommBuffers(Int_t edgeNodes)
 		 (m_rowMax & m_colMin & m_planeMax) +
 		 (m_rowMax & m_colMax & m_planeMin) +
 		 (m_rowMax & m_colMax & m_planeMax)) * CACHE_COHERENCE_PAD_REAL ;
-
+#ifdef DEBUG
+    printf("Rank:%d comBufSize %d\n", mpi.rank, comBufSize);
+#endif
   this->commDataSend = new Real_t[comBufSize] ;
   this->commDataRecv = new Real_t[comBufSize] ;
   // prevent floating point exceptions 
@@ -236,12 +238,15 @@ Domain::SetupCommBuffers(Int_t edgeNodes)
 #endif   
 
   // Boundary nodesets
-  if (m_colLoc == 0)
+  //if (m_colLoc == 0)
     m_symmX.resize(edgeNodes*edgeNodes);
-  if (m_rowLoc == 0)
+  //if (m_rowLoc == 0)
     m_symmY.resize(edgeNodes*edgeNodes);
-  if (m_planeLoc == 0)
+  //if (m_planeLoc == 0)
     m_symmZ.resize(edgeNodes*edgeNodes);
+#ifdef DEBUG
+  printf("size: %d\n", edgeNodes*edgeNodes);
+#endif
 }
 
 
@@ -365,12 +370,20 @@ void
 Domain::SetupSymmetryPlanes(Int_t edgeNodes)
 {
   Index_t nidx = 0 ;
+#ifdef DEBUG
+  printf("edgeNodes %d\n", edgeNodes);
+  #endif
   for (Index_t i=0; i<edgeNodes; ++i) {
     Index_t planeInc = i*edgeNodes*edgeNodes ;
     Index_t rowInc   = i*edgeNodes ;
     for (Index_t j=0; j<edgeNodes; ++j) {
       if (m_planeLoc == 0) {
 	m_symmZ[nidx] = rowInc   + j ;
+  #ifdef DEBUG
+
+    printf("Rank %d m_symmZ %d\n", mpi.rank, m_symmZ[nidx]);
+  #endif
+
       }
       if (m_rowLoc == 0) {
 	m_symmY[nidx] = planeInc + j ;
