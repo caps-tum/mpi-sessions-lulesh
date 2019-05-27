@@ -1079,7 +1079,7 @@ void CalcVolumeForceForElems(Domain& domain)
       Real_t *sigyy  = Allocate<Real_t>(numElem) ;
       Real_t *sigzz  = Allocate<Real_t>(numElem) ;
       Real_t *determ = Allocate<Real_t>(numElem) ;
-     printf("STRAT %s\n", __PRETTY_FUNCTION__);
+     //printf("STRAT %s\n", __PRETTY_FUNCTION__);
 
       /* Sum contributions to total stress tensor */
       InitStressTermsForElems(domain, sigxx, sigyy, sigzz, numElem);
@@ -1091,7 +1091,7 @@ void CalcVolumeForceForElems(Domain& domain)
                                domain.numNode()) ;
 
       // check for negative element volume
-           printf("BEFORE ABORT? %s\n", __PRETTY_FUNCTION__);
+        //   printf("BEFORE ABORT? %s\n", __PRETTY_FUNCTION__);
 
 #pragma omp parallel for firstprivate(numElem)
       for ( Index_t k=0 ; k<numElem ; ++k ) {
@@ -1121,7 +1121,7 @@ static inline void CalcForceForNodes(Domain& domain)
   Index_t numNode = domain.numNode() ;
 
 #if USE_MPI  
-   printf("Before COMMRECV CalcForceForNodes\n");
+  //printf("Before COMMRECV CalcForceForNodes\n");
   CommRecv(domain, MSG_COMM_SBN, 3,
            domain.sizeX() + 1, domain.sizeY() + 1, domain.sizeZ() + 1,
            true, false) ;
@@ -1259,14 +1259,25 @@ void LagrangeNodal(Domain& domain)
             false, false) ;
 #endif
 #endif
-   //printf("FIN CalcForceForNodes\n");
+#ifdef DEBUG   
+   printf("FIN CalcForceForNodes\n");
+#endif
    CalcAccelerationForNodes(domain, domain.numNode());
-   
+   #ifdef DEBUG   
+   printf("FIN CalcAccelerationForNodes\n");
+#endif
    ApplyAccelerationBoundaryConditionsForNodes(domain);
-
+#ifdef DEBUG   
+   printf("FIN ApplyAccelerationBoundaryConditionsForNodes\n");
+#endif
    CalcVelocityForNodes( domain, delt, u_cut, domain.numNode()) ;
-
+#ifdef DEBUG   
+   printf("FIN CalcVelocityForNodes\n");
+#endif
    CalcPositionForNodes( domain, delt, domain.numNode() );
+#ifdef DEBUG   
+   printf("FIN CalcPositionForNodes\n");
+#endif
 #if USE_MPI
 #ifdef SEDOV_SYNC_POS_VEL_EARLY
   fieldData[0] = &Domain::x ;
@@ -2628,9 +2639,9 @@ void LagrangeLeapFrog(Domain& domain)
    /* calculate nodal forces, accelerations, velocities, positions, with
     * applied boundary conditions and slide surface considerations */
    LagrangeNodal(domain);
-
-   //printf("FIN LagrangeNodal\n");
-
+#ifdef DEBUG
+   printf("FIN LagrangeNodal\n");
+#endif
 #ifdef SEDOV_SYNC_POS_VEL_LATE
 #endif
 
@@ -2725,8 +2736,14 @@ int main(int argc, char *argv[])
    opts.viz = 0;
    opts.balance = 1;
    opts.cost = 1;
+   opts.repart = -1;
+   opts.cycle = -1;
 
    ParseCommandLineOptions(argc, argv, myRank, &opts);
+
+   if(opts.cycle<0 && opts.repart>0){
+      opts.cycle = opts.its/2;
+   }
 
    if ((myRank == 0) && (opts.quiet == 0)) {
       std::cout << "Running problem size " << opts.nx << "^3 per domain until completion\n";
@@ -2746,6 +2763,7 @@ int main(int argc, char *argv[])
 
    // Set up the mesh and decompose. Assumes regular cubes for now
    Int_t col, row, plane, side;
+
    InitMeshDecomp(numRanks, myRank, &col, &row, &plane, &side);
 
    // Build the main data structure and initialize it
@@ -2764,7 +2782,7 @@ int main(int argc, char *argv[])
             locDom->sizeX() + 1, locDom->sizeY() + 1, locDom->sizeZ() +  1,
             true, false) ;
    CommSBN(*locDom, 1, &fieldData) ;
-   printf("End Init\n");
+   //printf("End Init\n");
    // End initialization
    MPI_Barrier(mpi.current_comm);
 #endif   
@@ -2772,6 +2790,7 @@ int main(int argc, char *argv[])
    // BEGIN timestep to solution */
 #if USE_MPI   
    double start = MPI_Wtime();
+   double start2 = MPI_Wtime();
 #else
    timeval start;
    gettimeofday(&start, NULL) ;
@@ -2783,7 +2802,11 @@ int main(int argc, char *argv[])
       printf("starting iter: %d\n", locDom->cycle()+1);
       
       TimeIncrement(*locDom) ;
+
+      printf("Time Increment iter: %d\n", locDom->cycle()+1);
+
       LagrangeLeapFrog(*locDom) ;
+
       if ((opts.showProg != 0) && (opts.quiet == 0) && (myRank == 0)) {
          std::cout << "cycle = " << locDom->cycle()       << ", "
                    << std::scientific
@@ -2792,13 +2815,34 @@ int main(int argc, char *argv[])
          std::cout.unsetf(std::ios_base::floatfield);
       }
 
-      // HARD CODING for shrinking
-      if(mpi.rank >= 1 && (locDom->cycle() == 6)){
-				MPI_Session_deletefrom_pset("app://lulesh",2);
-            printf("Removing myself.... :( Sorry you hated me!\n");
-		}
-      MPI_Barrier(mpi.current_comm);
 
+      if(opts.repart>0 &&  (locDom->cycle() == opts.cycle)) // condition for repartitioning 
+      {
+         double newside; int diffsize; 
+         newside = cbrt(opts.repart);
+         if (newside - ((int) floor(newside+0.1)) != 0){
+            printf("Cannot repart to a non-cubic number.\n");
+             MPI_Abort(MPI_COMM_WORLD,-1);
+         }
+         double new_nx = (double)opts.nx * (double)side / (double) newside;
+         double verifier;
+
+         if(modf(new_nx, &verifier) != 0.0){
+            std::cout << "Repartitioning is not allowed for inbalanced domains after repartitioning. \n";
+            MPI_Abort(MPI_COMM_WORLD, -1);
+         }
+
+         if(mpi.rank >= opts.repart){
+				MPI_Session_deletefrom_pset("app://lulesh",2);
+#ifdef DEBUG            
+            printf("Removing myself.... :( Sorry you hated me!\n");
+#endif
+		   }
+      }
+
+      // HARD CODING for shrinking
+      
+      MPI_Barrier(mpi.current_comm);
 
       //Check for changes in the process set
       if(MPI_Session_check_psetupdate(mpi.current_set_info)){
@@ -2807,9 +2851,24 @@ int main(int argc, char *argv[])
          printf("%d/%d: Detected Change! MPI Current Communicator: %p \n", mpi.size, mpi.rank, mpi.current_comm);
                         MPI_Barrier(mpi.current_comm);
 
+         double intermediate_timer = MPI_Wtime() - start2;
+         double itG;
+         MPI_Reduce(&intermediate_timer, &itG, 1, MPI_DOUBLE,
+                     MPI_MAX, 0, mpi.current_comm);
+
+         if ((myRank == 0) && (opts.quiet == 0)) {
+            printf("Starting Repartitioning, current runtime = %f s\n", itG);
+            printf("Previous Time per Iteration: %f s \n", itG/locDom->cycle());
+         }
+
+         printf("Starting Repartitioning. Current Configurations: \n");
+         printf("numRanks: %d, side: %d, nx: %d\n", numRanks, side, opts.nx);
+         printf("numElem: %d, numNode: %d\n", locDom->numElem(),locDom->numNode());
+         double repart_start = MPI_Wtime();
+
          unsigned long globalsize_elements = side*side*side*opts.nx*opts.nx*opts.nx;
          unsigned long globalsize_nodal = (opts.nx*side+1)*(opts.nx*side+1)*(opts.nx*side+1);
-#define DBL_MAX 99999999999
+#define DBL_MAX std::numeric_limits<double>::max()
          std::vector<double> m_fx(globalsize_nodal, DBL_MAX);
          std::vector<double> m_fy(globalsize_nodal, DBL_MAX);
          std::vector<double> m_fz(globalsize_nodal, DBL_MAX);
@@ -2823,8 +2882,6 @@ int main(int argc, char *argv[])
          std::vector<double> m_ydd(globalsize_nodal, DBL_MAX);
          std::vector<double> m_zdd(globalsize_nodal, DBL_MAX);
          std::vector<double> m_nodalMass(globalsize_nodal, DBL_MAX);
-
-
          std::vector<double> m_delv_xi(globalsize_elements, DBL_MAX);
          std::vector<double> m_delv_eta(globalsize_elements, DBL_MAX);
          std::vector<double> m_delv_zeta(globalsize_elements, DBL_MAX);
@@ -2846,9 +2903,6 @@ int main(int argc, char *argv[])
          std::vector<double> m_arealg(globalsize_elements, DBL_MAX);
          std::vector<double> m_ss(globalsize_elements, DBL_MAX);
          std::vector<double> m_elemMass(globalsize_elements, DBL_MAX);
-
-         
-         
        
          mapLocaltoGlobalNodes(numRanks,myRank,*locDom,
             m_fx, m_fy,m_fz,  m_x, m_y, m_z, 
@@ -2877,43 +2931,26 @@ int main(int argc, char *argv[])
                m_ss,
                m_elemMass
                );
+#ifdef DEBUG               
          printf("PACK DONE!\n");
-          
-         /*
-         printf("The value is \n");
-         for(int i=0; i<m_delv_zeta.size(); ++i)
-               printf("Rank: %d The value %d is %f\n", mpi.rank, i, m_delv_zeta[i]);
-         */
-         std::vector<double> m_fx_sum(globalsize_nodal, 0);
-         MPI_Allreduce(m_fx.data(), m_fx_sum.data(), globalsize_nodal, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
-
-         std::vector<double> m_fy_sum(globalsize_nodal, 0);
-         MPI_Allreduce(m_fy.data(), m_fy_sum.data(), globalsize_nodal, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
-
-         std::vector<double> m_fz_sum(globalsize_nodal, 0);
-         MPI_Allreduce(m_fz.data(), m_fz_sum.data(), globalsize_nodal, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
-
-         std::vector<double> m_nodalMass_sum(globalsize_nodal, 0);
-         MPI_Allreduce(m_nodalMass.data(), m_nodalMass_sum.data(), globalsize_nodal, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
-
-         std::vector<double> m_delv_xi_sum(globalsize_elements, 0);
-         MPI_Allreduce(m_delv_xi.data(), m_delv_xi_sum.data(), globalsize_elements, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
-
-         std::vector<double> m_delv_eta_sum(globalsize_elements, 0);
-         MPI_Allreduce(m_delv_eta.data(), m_delv_eta_sum.data(), globalsize_elements, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
+#endif          
          
-         std::vector<double> m_delv_zeta_sum(globalsize_elements, 0);
-         MPI_Allreduce(m_delv_zeta.data(), m_delv_zeta_sum.data(), globalsize_elements, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
-
-         std::vector<double> sm_x(globalsize_nodal, 0);
-         std::vector<double> sm_y(globalsize_nodal, 0);
-         std::vector<double> sm_z(globalsize_nodal, 0);
-         std::vector<double> sm_xd(globalsize_nodal, 0);
-         std::vector<double> sm_yd(globalsize_nodal, 0);
-         std::vector<double> sm_zd(globalsize_nodal, 0);
-         std::vector<double> sm_xdd(globalsize_nodal, 0);
-         std::vector<double> sm_ydd(globalsize_nodal, 0);
-         std::vector<double> sm_zdd(globalsize_nodal, 0);
+         std::vector<double> m_fx_sum(globalsize_nodal, DBL_MAX);
+         std::vector<double> m_fy_sum(globalsize_nodal, DBL_MAX);
+         std::vector<double> m_fz_sum(globalsize_nodal, DBL_MAX);
+         std::vector<double> m_nodalMass_sum(globalsize_nodal, DBL_MAX);
+         std::vector<double> m_delv_xi_sum(globalsize_elements, DBL_MAX);
+         std::vector<double> m_delv_eta_sum(globalsize_elements, DBL_MAX);
+         std::vector<double> m_delv_zeta_sum(globalsize_elements, DBL_MAX);
+         std::vector<double> sm_x(globalsize_nodal, DBL_MAX);
+         std::vector<double> sm_y(globalsize_nodal, DBL_MAX);
+         std::vector<double> sm_z(globalsize_nodal, DBL_MAX);
+         std::vector<double> sm_xd(globalsize_nodal, DBL_MAX);
+         std::vector<double> sm_yd(globalsize_nodal, DBL_MAX);
+         std::vector<double> sm_zd(globalsize_nodal, DBL_MAX);
+         std::vector<double> sm_xdd(globalsize_nodal, DBL_MAX);
+         std::vector<double> sm_ydd(globalsize_nodal, DBL_MAX);
+         std::vector<double> sm_zdd(globalsize_nodal, DBL_MAX);
          std::vector<double> sm_dxx(globalsize_elements, DBL_MAX);
          std::vector<double> sm_dyy(globalsize_elements, DBL_MAX);
          std::vector<double> sm_dzz(globalsize_elements, DBL_MAX);
@@ -2933,6 +2970,13 @@ int main(int argc, char *argv[])
          std::vector<double> sm_ss(globalsize_elements, DBL_MAX);
          std::vector<double> sm_elemMass(globalsize_elements, DBL_MAX);
 
+         MPI_Allreduce(m_fx.data(), m_fx_sum.data(), globalsize_nodal, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
+         MPI_Allreduce(m_fy.data(), m_fy_sum.data(), globalsize_nodal, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
+         MPI_Allreduce(m_fz.data(), m_fz_sum.data(), globalsize_nodal, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
+         MPI_Allreduce(m_nodalMass.data(), m_nodalMass_sum.data(), globalsize_nodal, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
+         MPI_Allreduce(m_delv_xi.data(), m_delv_xi_sum.data(), globalsize_elements, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
+         MPI_Allreduce(m_delv_eta.data(), m_delv_eta_sum.data(), globalsize_elements, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
+         MPI_Allreduce(m_delv_zeta.data(), m_delv_zeta_sum.data(), globalsize_elements, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
          MPI_Allreduce(m_x.data(), sm_x.data(), globalsize_nodal, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
          MPI_Allreduce(m_y.data(), sm_y.data(), globalsize_nodal, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
          MPI_Allreduce(m_z.data(), sm_z.data(), globalsize_nodal, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
@@ -2961,31 +3005,57 @@ int main(int argc, char *argv[])
          MPI_Allreduce(m_ss.data(), sm_ss.data(), globalsize_elements, MPI_DOUBLE, MPI_MIN, mpi.current_comm);        
          MPI_Allreduce(m_elemMass.data(), sm_elemMass.data(), globalsize_elements, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
 
-
+#ifdef DEBUG
          printf("DATA MIGRATION DONE!\n");
-         /*
-             for(int i=0; i<m_fx_sum.size(); ++i){
-               if(mpi.rank==0){
-                  printf("Rank: %d The value before %d is %f\n", mpi.rank, i, m_fx_sum[i]);
-               }
-         }
-      */
+#endif
+
+         m_fx.clear();
+         m_fy.clear();
+         m_fz.clear();
+         m_x.clear();
+         m_y.clear();
+         m_z.clear();
+         m_xd.clear();
+         m_yd.clear();
+         m_zd.clear();
+         m_xdd.clear();
+         m_ydd.clear();
+         m_zdd.clear();
+         m_nodalMass.clear();
+         m_delv_xi.clear();
+         m_delv_eta.clear();
+         m_delv_zeta.clear();
+         m_dxx.clear();
+         m_dyy.clear();
+         m_dzz.clear();
+         m_delx_xi.clear();
+         m_delx_eta.clear();
+         m_delx_zeta.clear();
+         m_e.clear();
+         m_p.clear();
+         m_q.clear();
+         m_ql.clear();
+         m_qq.clear();
+         m_v.clear();
+         m_volo.clear();
+         m_delv.clear();
+         m_vdov.clear();
+         m_arealg.clear();
+         m_ss.clear();
+         m_elemMass.clear();
+
          if(!MPI_Session_check_in_processet("app://lulesh")){
-            //migration 
-            //while(1){ sleep(1); }
+#ifdef DEBUG
             printf("I'm %d/%d You are done? Happy? Shutting Down...\n", mpi.rank, mpi.size);
-            //MPI_Finalize();
             MPI_Session_finalize(&mpi.session);
+#endif
 	         MPI_Session_free();
+            exit(0);
          }
-         /*
+#ifdef DEBUG
          printf("The value is after REDUCE\n");
-         for(int i=0; i<m_fx_sum.size(); ++i)
-               printf("The value is %f\n", m_fx_sum[i]);
-         */
+#endif
          //create new communication facilities
-         MpiData mpi_new;
-         mpi_new.session = mpi.session;
          MPI_Session_get_set_info(&mpi.session, "app://lulesh", &mpi.current_set_info);
          MPI_Group_create_from_session(&mpi.session, "app://lulesh", &mpi.current_group, mpi.current_set_info);
          MPI_Comm_create_from_group(mpi.current_group, NULL, &mpi.current_comm, mpi.current_set_info);
@@ -2995,16 +3065,19 @@ int main(int argc, char *argv[])
          MPI_Comm_size(mpi.current_comm, &numRanks) ;
          MPI_Comm_rank(mpi.current_comm, &myRank) ;
 
-         opts.nx = opts.nx * side / 1;
+         opts.nx = opts.nx * side / cbrt(opts.repart);
+
          //LULESH new init
          InitMeshDecomp(numRanks, myRank, &col, &row, &plane, &side);
            // update Domain according to the new process group
 
          locDom -> re_init_domain(numRanks, col, row, plane, opts.nx,
                                     side, opts.numReg, opts.balance, opts.cost);
+#ifdef DEBUG                  
          printf("Domain has been reinitialized. Configurations: \n");
          printf("numRanks: %d, side: %d, nx: %d\n", numRanks, side, opts.nx);
-         printf("numElem: %d, numNode: %d", locDom->numElem(),locDom->numNode());
+         printf("numElem: %d, numNode: %d\n", locDom->numElem(),locDom->numNode());
+#endif
 
          mapGlobaltoLocalNodes(numRanks,myRank,*locDom,
             m_fx_sum, m_fy_sum, m_fz_sum, sm_x, sm_y, sm_z, 
@@ -3033,24 +3106,54 @@ int main(int argc, char *argv[])
                         sm_ss,
                         sm_elemMass
                         );
-         printf("UNPACK DONE!\n");
-         /*
-         for(int i=0; i<locDom->m_fx.size(); ++i){
-               if(mpi.rank==0){
-                  printf("Rank: %d The local value before %d is %f\n", mpi.rank, i, locDom->m_fx[i]);
-               }
-         }*/
 
-/*
-         printf("m_delv_xi_sum: %d, loc: %d", m_delv_xi_sum.size(), locDom->m_delv_xi.size());
-         for(int i=0; i<locDom->m_dxx.size(); ++i){
-               if(mpi.rank==0){
-                  printf("Rank: %d The local value before %d is %f\n", mpi.rank, i, locDom->m_dxx[i]);
-               }
-         }
-*/
+         m_fx_sum.clear();
+         m_fy_sum.clear();
+         m_fz_sum.clear();
+         m_nodalMass_sum.clear();
+         m_delv_xi_sum.clear();
+         m_delv_eta_sum.clear();
+         m_delv_zeta_sum.clear();
+         sm_x.clear();
+         sm_y.clear();
+         sm_z.clear();
+         sm_xd.clear();
+         sm_yd.clear();
+         sm_zd.clear();
+         sm_xdd.clear();
+         sm_ydd.clear();
+         sm_zdd.clear();
+         sm_dxx.clear();
+         sm_dyy.clear();
+         sm_dzz.clear();
+         sm_delx_xi.clear();
+         sm_delx_eta.clear();
+         sm_delx_zeta.clear();
+         sm_e.clear();
+         sm_p.clear();
+         sm_q.clear();
+         sm_ql.clear();
+         sm_qq.clear();
+         sm_v.clear();
+         sm_volo.clear();
+         sm_delv.clear();
+         sm_vdov.clear();
+         sm_arealg.clear();
+         sm_ss.clear();
+         sm_elemMass.clear();
+#ifdef DEBUG                        
+         printf("UNPACK DONE!\n");
+#endif
+
+         double duration = MPI_Wtime() - repart_start;
+
+           printf("After repart\n");
+           if (opts.quiet == 0)
+                printf("Repartition Done in %f s on Rank %d\n", duration, myRank);
+
+         start2 = MPI_Wtime();
          printf("%d/%d: Now going to continue... My Comm: %p  \n", mpi.size, mpi.rank, mpi.current_comm);
-         printf("fuckyou\n");
+         //printf("\n");
       }	
 
       

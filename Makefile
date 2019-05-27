@@ -9,7 +9,7 @@ MPI_INC = /opt/local/include/openmpi
 MPI_LIB = /opt/local/lib
 
 SERCXX = g++ -DUSE_MPI=0
-MPICXX = mpiCC -DUSE_MPI=1
+MPICXX = mpiCC -DUSE_MPI=1 -DDEBUG
 CXX = $(MPICXX)
 
 SOURCES2.0 = \
