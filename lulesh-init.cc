@@ -715,6 +715,7 @@ void Domain::re_init_domain(Int_t numRanks, Index_t colLoc,
     //m_regNumList = new Index_t[numElem()] ;  // material indexset
     m_regNumList.resize(numElem()); // material indexset
     m_nodelist.resize(8*numElem());
+
     m_lxim.resize(numElem());
     m_lxip.resize(numElem());
     m_letam.resize(numElem());
@@ -749,18 +750,22 @@ void Domain::re_init_domain(Int_t numRanks, Index_t colLoc,
    m_fx.resize(numNode());
    m_fy.resize(numNode());
    m_fz.resize(numNode());
+
    m_x.resize(numNode());
    m_y.resize(numNode());
    m_z.resize(numNode());
+
    m_xd.resize(numNode());
    m_yd.resize(numNode());
    m_zd.resize(numNode());
+
    m_xdd.resize(numNode());
    m_ydd.resize(numNode());
    m_zdd.resize(numNode());
+
    m_nodalMass.resize(numNode());   
 
-   m_vnew.resize(numElem()) ;
+   m_vnew.resize(numNode()) ;
                      
    
 

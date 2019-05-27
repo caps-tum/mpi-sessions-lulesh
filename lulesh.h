@@ -677,6 +677,9 @@ struct cmdLineOpts {
    Int_t viz; // -v 
    Int_t cost; // -c
    Int_t balance; // -b
+   //added for shrinking
+   Int_t repart; // -repart
+   Int_t cycle; // -repart_cycle
 };
 
 

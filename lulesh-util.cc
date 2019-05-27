@@ -587,6 +587,29 @@ void ParseCommandLineOptions(int argc, char *argv[],
          else if (strcmp(argv[i], "-ps") == 0){
             i+=2;
          }
+         else if (strcmp(argv[i], "-repart") == 0) {
+            if (i+1 >= argc) {
+               ParseError("Missing integer argument to -repart\n", myRank);
+            }
+            ok = StrToInt(argv[i+1], &(opts->repart));
+            if (!ok) {
+               ParseError("Parse Error on option -repart integer value required after argument\n", myRank);
+            }
+            if(opts->cycle<0){
+               opts->cycle = opts->its/2;
+            }
+            i+=2;
+         }
+         else if (strcmp(argv[i], "-repart_cycle") == 0) {
+            if (i+1 >= argc) {
+               ParseError("Missing integer argument to -repart_cycle\n", myRank);
+            }
+            ok = StrToInt(argv[i+1], &(opts->cycle));
+            if (!ok) {
+               ParseError("Parse Error on option -repart_cycle integer value required after argument\n", myRank);
+            }
+            i+=2;
+         }
          /* -h */
          else if (strcmp(argv[i], "-h") == 0) {
             PrintCommandLineOptions(argv[0], myRank);
