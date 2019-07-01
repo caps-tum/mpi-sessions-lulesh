@@ -1,4 +1,31 @@
 /*
+   This is the MPI Sessions Version of LULESH.
+   This copyright notice only applies to code change authored by 
+   Amir Raoofy and Dai Yang
+
+   Copyright (C) 2018-2019 
+   Chair of Computer Architecture and Parallel Systems. 
+   Technical University of Munich
+   All rights reserved.
+ */
+
+/*
+HIS APPLICATION IS PROVIDED BY THE COPYRIGHT HOLDERS AND 
+CONTRIBUTORS “AS IS” AND ANY EXPRESS OR IMPLIED WARRANTIES, 
+INCLUDING, BUT NOT LIMITED TO, THE IMPLIED WARRANTIES OF 
+MERCHANTABILITY AND FITNESS FOR A PARTICULAR PURPOSE ARE 
+DISCLAIMED. IN NO EVENT SHALL THE COPYRIGHT OWNER OR CONTRIBUTORS 
+BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, 
+EXEMPLARY, OR CONSEQUENTIAL DAMAGES (INCLUDING, BUT NOT LIMITED 
+TO, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES; LOSS OF USE, 
+DATA, OR PROFITS; OR BUSINESS INTERRUPTION) HOWEVER CAUSED AND 
+ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT, STRICT LIABILITY, 
+OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY OUT 
+OF THE USE OF THIS SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY 
+OF SUCH DAMAGE. 
+ */
+
+/*
   This is a Version 2.0 MPI + OpenMP implementation of LULESH
 
                  Copyright (c) 2010-2013.
@@ -2868,10 +2895,11 @@ int main(int argc, char *argv[])
             printf("Starting Repartitioning, current runtime = %f s\n", itG);
             printf("Previous Time per Iteration: %f s \n", itG/locDom->cycle());
          }
-
+#ifdef DEBUG
          printf("Starting Repartitioning. Current Configurations: \n");
          printf("numRanks: %d, side: %d, nx: %d\n", numRanks, side, opts.nx);
          printf("numElem: %d, numNode: %d\n", locDom->numElem(),locDom->numNode());
+#endif
          double repart_start = MPI_Wtime();
 
          //packing elements into element buffer
@@ -2978,7 +3006,7 @@ int main(int argc, char *argv[])
          std::vector<double> sm_arealg(globalsize_elements, DBL_MAX);
          std::vector<double> sm_ss(globalsize_elements, DBL_MAX);
          std::vector<double> sm_elemMass(globalsize_elements, DBL_MAX);
-
+         //communicate all data structure
          MPI_Allreduce(m_fx.data(), m_fx_sum.data(), globalsize_nodal, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
          MPI_Allreduce(m_fy.data(), m_fy_sum.data(), globalsize_nodal, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
          MPI_Allreduce(m_fz.data(), m_fz_sum.data(), globalsize_nodal, MPI_DOUBLE, MPI_MIN, mpi.current_comm);
@@ -3017,7 +3045,7 @@ int main(int argc, char *argv[])
 #ifdef DEBUG
          printf("DATA MIGRATION DONE!\n");
 #endif
-
+         //cleanup local buffer
          m_fx.clear();
          m_fy.clear();
          m_fz.clear();
@@ -3053,6 +3081,7 @@ int main(int argc, char *argv[])
          m_ss.clear();
          m_elemMass.clear();
 
+         // stop processes that are not working any more. 
          if(!MPI_Session_check_in_processet("app://lulesh")){
 #ifdef DEBUG
             printf("I'm %d/%d You are done? Happy? Shutting Down...\n", mpi.rank, mpi.size);
@@ -3170,6 +3199,7 @@ int main(int argc, char *argv[])
    double elapsed_time;
 #if USE_MPI   
    elapsed_time = MPI_Wtime() - start;
+   double alternate_time = MPI_Wtime() - start2;
 #else
    timeval end;
    gettimeofday(&end, NULL) ;
@@ -3177,7 +3207,10 @@ int main(int argc, char *argv[])
 #endif
    double elapsed_timeG;
 #if USE_MPI   
+double elapsed_timeG2;
    MPI_Reduce(&elapsed_time, &elapsed_timeG, 1, MPI_DOUBLE,
+              MPI_MAX, 0, mpi.current_comm);
+  MPI_Reduce(&alternate_time, &elapsed_timeG2, 1, MPI_DOUBLE,
               MPI_MAX, 0, mpi.current_comm);
 #else
    elapsed_timeG = elapsed_time;
@@ -3190,6 +3223,11 @@ int main(int argc, char *argv[])
    
    if ((myRank == 0) && (opts.quiet == 0)) {
       VerifyAndWriteFinalOutput(elapsed_timeG, *locDom, opts.nx, numRanks);
+#ifdef USE_MPI
+      if (opts.repart>0){
+        printf("Time After Repartitioing: %f, per Iteration %f\n", elapsed_timeG2, elapsed_timeG2/(locDom->cycle() - opts.cycle));
+      }
+#endif
    }
 
    delete locDom; 
